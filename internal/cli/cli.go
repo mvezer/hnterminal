@@ -5,6 +5,7 @@ import (
 	apiclient "hnterminal/internal/apiclient"
 	config "hnterminal/internal/config"
 	repository "hnterminal/internal/repository"
+	utils "hnterminal/internal/utils"
 	"strings"
 	"time"
 )
@@ -28,7 +29,7 @@ func (c *Cli) Close() {
 	c.repo.Close()
 }
 
-func (c *Cli) RenderStory(index int, story repository.Item) string {
+func (c *Cli) RenderStory(index int, story *repository.Item) string {
 	var rendered strings.Builder
 	fmt.Fprintf(&rendered, "%d. %s\n", index, story.Title)
 	fmt.Fprintf(&rendered, "  url: %s \n", story.Url)
@@ -44,17 +45,17 @@ func (c *Cli) Run() {
 		if err != nil {
 			fmt.Println(err)
 		}
-		storiesCount := len(topStories)
-		if c.config.Count > 0 {
-			storiesCount = c.config.Count
+		storiesCount := utils.Min(len(topStories), c.config.StoryCount)
+		stories, err := c.repo.GetItems(topStories[:storiesCount])
+		if err != nil {
+			utils.HandleError(err, utils.ErrorSeverityFatal)
 		}
-		for idx := range storiesCount {
-			story, err := c.repo.GetItem(topStories[idx])
+		for idx, story := range stories {
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
-			fmt.Printf("--------------------------------\n%s\n", c.RenderStory(idx+1, *story))
+			fmt.Printf("--------------------------------\n%s\n", c.RenderStory(idx+1, story))
 		}
 	default:
 

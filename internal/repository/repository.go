@@ -2,11 +2,16 @@ package repository
 
 import (
 	"encoding/json"
-	badger "github.com/dgraph-io/badger/v4"
 	api "hnterminal/internal/apiclient"
+	"hnterminal/internal/utils"
 	"log"
 	"strconv"
+	"sync"
+
+	badger "github.com/dgraph-io/badger/v4"
 )
+
+const MAX_ITEM_GET_BATCH_SIZE = 5
 
 type ItemIds []int
 type Item struct {
@@ -33,6 +38,7 @@ type Repository struct {
 	db         *badger.DB
 	apiClient  *api.ApiClient
 	updatedIds map[int]bool
+	wg         *sync.WaitGroup
 }
 
 func New(apiClient *api.ApiClient) *Repository {
@@ -46,7 +52,7 @@ func New(apiClient *api.ApiClient) *Repository {
 	if client == nil {
 		client = api.New(nil)
 	}
-	return &Repository{db, client, make(map[int]bool, 0)}
+	return &Repository{db, client, make(map[int]bool, 0), &sync.WaitGroup{}}
 }
 
 func (r *Repository) SetUpdatedIds(ids []int) {
@@ -79,6 +85,26 @@ func (r *Repository) GetItem(id int) (*Item, error) {
 		r.SaveItemToCache(id, item)
 	}
 	return item, nil
+}
+
+func (r *Repository) GetItems(ids []int) ([]*Item, error) {
+	items := make([]*Item, len(ids))
+	processedCount := 0
+	for processedCount < len(ids) {
+		for i := processedCount; i < utils.Min(processedCount+MAX_ITEM_GET_BATCH_SIZE, len(ids)); i++ {
+			r.wg.Go(func() {
+				item, err := r.GetItem(ids[i])
+				if err != nil {
+					items[i] = nil
+				} else {
+					items[i] = item
+				}
+			})
+		}
+		r.wg.Wait()
+		processedCount += (MAX_ITEM_GET_BATCH_SIZE - 1)
+	}
+	return items, nil
 }
 
 func (r *Repository) LoadItemFromCache(id int) (*Item, error) {
