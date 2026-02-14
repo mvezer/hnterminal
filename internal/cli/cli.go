@@ -22,7 +22,7 @@ func New(config *config.Config) *Cli {
 
 func (c *Cli) Init() {
 	c.api = apiclient.New(nil)
-	c.repo = repository.New(c.api)
+	c.repo = repository.New(c.api, c.config)
 }
 
 func (c *Cli) Close() {

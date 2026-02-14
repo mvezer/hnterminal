@@ -1,17 +1,18 @@
 package main
 
 import (
-	"fmt"
 	cli "hnterminal/internal/cli"
 	config "hnterminal/internal/config"
+	tui "hnterminal/internal/tui"
 )
 
 func main() {
-	config.ParseArgs()
+	currentConfig := config.New()
 	if config.IsTUI() {
-		fmt.Println("TUI mode not implemented yet")
+		tui := tui.New(currentConfig)
+		tui.Run()
 	} else {
-		cli := cli.New(config.GetConfig())
+		cli := cli.New(currentConfig)
 		cli.Run()
 		defer cli.Close()
 	}

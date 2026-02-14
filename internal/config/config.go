@@ -3,12 +3,14 @@ package config
 import (
 	"fmt"
 	utils "hnterminal/internal/utils"
+	"os"
 
 	arg "github.com/alexflint/go-arg"
 )
 
 const DEFAULT_STORY_COUNT = 10
 const DEFAULT_COMMAND = ""
+const DEFAULT_DB_PATH = ""
 
 var ValidCommands = [...]string{"top", "comment"}
 
@@ -20,17 +22,30 @@ var cliArgs struct {
 type Config struct {
 	StoryCount int
 	Command    string
+	DbPath     string
 }
 
-var currentConfig = Config{
-	StoryCount: DEFAULT_STORY_COUNT,
-	Command:    DEFAULT_COMMAND,
+var isConfigInitialized = false
+
+var currentConfig = Config{}
+
+func New() *Config {
+	// set default config values
+	currentConfig = Config{
+		DEFAULT_STORY_COUNT,
+		DEFAULT_COMMAND,
+		getDefaultDbPath(),
+	}
+	parseConfig()
+	parseArgs()
+	isConfigInitialized = true
+	return GetConfig()
 }
 
 /*
 Parses and validates command line args
 */
-func ParseArgs() {
+func parseArgs() {
 	arg.MustParse(&cliArgs)
 	isValidCommand := false
 	if cliArgs.Command != "" {
@@ -52,10 +67,26 @@ func ParseArgs() {
 	currentConfig.StoryCount = cliArgs.StoryCount
 }
 
+func parseConfig() {
+	currentConfig.DbPath = getDefaultDbPath()
+}
+
 func IsTUI() bool {
-	return cliArgs.Command == ""
+	return currentConfig.Command == ""
+}
+
+func getDefaultDbPath() string {
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		stateHome = fmt.Sprintf("%s/.state", os.Getenv("HOME"))
+	}
+
+	return fmt.Sprintf("%s/hacker-news-terminal", stateHome)
 }
 
 func GetConfig() *Config {
+	if !isConfigInitialized {
+		utils.HandleError(fmt.Errorf("Config is not initialized yet!"), utils.ErrorSeverityFatal)
+	}
 	return &currentConfig
 }

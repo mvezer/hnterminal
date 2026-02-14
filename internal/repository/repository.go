@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	api "hnterminal/internal/apiclient"
+	config "hnterminal/internal/config"
 	"hnterminal/internal/utils"
 	"log"
 	"strconv"
@@ -11,7 +12,7 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 )
 
-const MAX_ITEM_GET_BATCH_SIZE = 5
+const MAX_ITEM_GET_BATCH_SIZE = 20
 
 type ItemIds []int
 type Item struct {
@@ -39,10 +40,12 @@ type Repository struct {
 	apiClient  *api.ApiClient
 	updatedIds map[int]bool
 	wg         *sync.WaitGroup
+	config     *config.Config
 }
 
-func New(apiClient *api.ApiClient) *Repository {
-	opts := badger.DefaultOptions("/tmp/badger")
+func New(apiClient *api.ApiClient, cfg *config.Config) *Repository {
+	opts := badger.DefaultOptions(cfg.DbPath)
+	// TODO: set up proper logging for badger
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	if err != nil {
@@ -52,7 +55,7 @@ func New(apiClient *api.ApiClient) *Repository {
 	if client == nil {
 		client = api.New(nil)
 	}
-	return &Repository{db, client, make(map[int]bool, 0), &sync.WaitGroup{}}
+	return &Repository{db, client, make(map[int]bool, 0), &sync.WaitGroup{}, cfg}
 }
 
 func (r *Repository) SetUpdatedIds(ids []int) {
