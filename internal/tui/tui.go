@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v3/color"
 	"log"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -89,7 +90,6 @@ func (t *TUI) CalculateGridGeometry(components []*Component, parentComponent *Co
 		targetSize = parentComponent.Height()
 	}
 	defaultSize := targetSize / len(components)
-	log.Printf("Calculating grid geometry for %d components, target size: %d, default size: %d", len(components), targetSize, defaultSize)
 	fixedSize := 0
 	fixedComponents := make(map[int]bool, 0)
 	calcutatedSize := 0
@@ -112,37 +112,28 @@ func (t *TUI) CalculateGridGeometry(components []*Component, parentComponent *Co
 			sizes[i] = defaultSize
 		}
 		calcutatedSize += sizes[i]
-		log.Printf("[%d] size: %d, isFixed: %t", i, sizes[i], fixedComponents[i])
 	}
-	log.Printf("[after first pass] calcutatedSize: %d, targetSize: %d, defaultSize: %d, fixedSize: %d", calcutatedSize, targetSize, defaultSize, fixedSize)
 	if len(fixedComponents) > 0 && calcutatedSize != targetSize {
 		calcutatedSize = 0
 		defaultSize = (targetSize - fixedSize) / (len(components) - len(fixedComponents))
 		for i := range components {
-			log.Println(i)
 			if !fixedComponents[i] {
 				sizes[i] = defaultSize
 			}
 			calcutatedSize += sizes[i]
 		}
 	}
-	log.Printf("[after second pass] calcutatedSize: %d, targetSize: %d, defaultSize: %d", calcutatedSize, targetSize, defaultSize)
 	if calcutatedSize != targetSize {
-		log.Printf("calcutatedSize: %d, targetSize: %d", calcutatedSize, targetSize)
 		for i := range components {
-			log.Println(i)
 			if !fixedComponents[i] {
-				log.Printf("correcting %d with %d", i, targetSize-calcutatedSize)
 				sizes[i] += targetSize - calcutatedSize
 				break
 			}
 		}
 	}
-	log.Printf("sizes: %v", sizes)
 	offset := 0
 	ids := make([]int, len(components))
 	for i, c := range components {
-		log.Printf("offset: %d", offset)
 		if parentComponent.Layout() == LayoutHorizontalGrid {
 			c.SetGeometry(offset, 0, sizes[i], parentComponent.Height())
 		} else {
@@ -170,8 +161,11 @@ func (t *TUI) UpdateGeometry(rootComponent *Component) {
 		if c.Floating() {
 			c.SetGeometry(utils.Max(c.X(), 0), utils.Max(c.Y(), 0), utils.Min(c.Width(), screenWidth-c.X()), utils.Min(c.Height(), screenHeight-c.Y()))
 		} else {
-			if c.IsRoot() || c.Parent().Layout() == LayoutFill {
+			if c.IsRoot() {
 				c.SetGeometry(0, 0, screenWidth, screenHeight)
+				processed[c.Id()] = true
+			} else if c.Parent().Layout() == LayoutFill {
+				c.SetGeometry(0, 0, c.Parent().Width(), c.Parent().Height())
 				processed[c.Id()] = true
 			} else if !c.IsRoot() && (c.Parent().Layout() == LayoutHorizontalGrid || c.Parent().Layout() == LayoutVerticalGrid) {
 				for _, i := range t.CalculateGridGeometry(c.GetSiblings(), c.Parent()) {
@@ -257,6 +251,13 @@ func (t *TUI) Run() {
 			b.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Black))
 		} else {
 			b.SetStyle(tcell.StyleDefault.Foreground(color.Black).Background(color.White))
+		}
+		if i == 2 {
+			t := t.NewText(0, 0, 0, 0, 1,
+				"Everyone is a genius. But if you judge a fish by its ability to climb a tree, it will live its whole life believing that it is stupid.",
+				true, TextAlignmentJustify)
+			t.SetLayout(LayoutFill)
+			b.AddChild(&t)
 		}
 		if i == 3 {
 			b.SetMaxHeight(2)
@@ -527,7 +528,6 @@ func (c *Component) HasChildren() bool {
 }
 
 func (c *Component) SetGeometry(x int, y int, width int, height int) bool {
-	log.Printf("Setting geometry for %d, x: %d, y: %d, w: %d, h: %d", c.Id(), x, y, width, height)
 	geometryChanged := c.SetX(x)
 	geometryChanged = c.SetY(y) || geometryChanged
 	geometryChanged = c.SetWidth(width) || geometryChanged
@@ -568,11 +568,10 @@ type Box struct {
 
 func (b Box) Draw(c *Component) error {
 	c.tui.mutex.Lock()
-	log.Printf("Drawing box %d, x: %d, y: %d, w: %d, h: %d", c.Id(), c.AbsX(), c.AbsY(), c.Width(), c.Height())
 	s := c.Screen()
 	for x := range c.Width() {
 		for y := range c.Height() {
-			s.Put(c.AbsX()+x, c.AbsY()+y, "O", c.style)
+			s.Put(c.AbsX()+x, c.AbsY()+y, " ", c.style)
 		}
 	}
 	c.tui.mutex.Unlock()
@@ -585,11 +584,104 @@ func (t *TUI) NewBox(width int, height int, x int, y int, padding int) Component
 // ----------------- Text -----------------
 type Text struct {
 	alignment TextAlignment
+	wordWrap  bool
 	text      string
 }
 
-func (t Text) Draw(c *Component) error {
+func (t *TUI) NewText(width int, height int, x int, y int, padding int, text string, wordWrap bool, alignment TextAlignment) Component {
+	return t.NewComponent(width, height, x, y, &Text{alignment: alignment, wordWrap: wordWrap, text: text})
+}
+
+func (t *Text) SetText(text string) {
+	t.text = text
+}
+
+func (t *Text) SetAlignment(alignment TextAlignment) {
+	t.alignment = alignment
+}
+
+func (t *Text) SetWordWrap(wordWrap bool) {
+	t.wordWrap = wordWrap
+}
+
+func (t *Text) Text() string {
+	return t.text
+}
+
+func (t *Text) Alignment() TextAlignment {
+	return t.alignment
+}
+
+func (t *Text) RenderLine(words []string, alignment TextAlignment, allowedWidth int) string {
+	if len(words) == 0 {
+		return ""
+	}
+	res := ""
+	switch alignment {
+	case TextAlignmentLeft:
+		res = strings.Join(words, " ")
+	case TextAlignmentRight:
+		s := strings.Join(words, " ")
+		res = strings.Repeat(" ", allowedWidth-len(s)) + s
+	case TextAlignmentCenter:
+		s := strings.Join(words, " ")
+		spacesBefore := (allowedWidth - len(s)) / 2
+		spacesAfter := (allowedWidth - len(s)) - spacesBefore
+		res = strings.Repeat(" ", spacesBefore) + s + strings.Repeat(" ", spacesAfter)
+	case TextAlignmentJustify:
+		if len(words) == 1 {
+			res = words[0]
+			break
+		}
+		fillLength := allowedWidth - len(strings.Join(words, " "))
+		spaces := make([]int, len(words)-1)
+		i := 0
+		for fillLength > 0 {
+			if i == len(spaces)-1 {
+				i = 0
+			}
+			spaces[i] += 1
+			fillLength -= 1
+			i++
+		}
+		res = ""
+		for i := range words {
+			res += words[i]
+			if i < len(words)-1 {
+				res += strings.Repeat(" ", spaces[i]+1)
+			}
+		}
+	}
+	return res
+}
+
+func (t *Text) Draw(c *Component) error {
 	s := c.Screen()
-	s.Put(c.AbsX(), c.AbsY(), t.text, c.Style())
+	lines := make([][]string, 0)
+	allowedWidth := c.Width() - 2 // TODO: add dynamic padding
+	words := strings.Split(t.text, " ")
+	currentLength := 0
+	currentLine := make([]string, 0)
+	for _, w := range words {
+		if currentLength+len(w)+1 > allowedWidth {
+			lines = append(lines, currentLine)
+			currentLine = make([]string, 0)
+			currentLine = append(currentLine, w)
+			currentLength = len(w)
+		} else {
+			currentLine = append(currentLine, w)
+			currentLength += len(w) + 1
+		}
+	}
+	if len(currentLine) > 0 {
+		lines = append(lines, currentLine)
+	}
+	allowedHeight := c.Height() - 2 // TODO: add dynamic padding
+	for y := range utils.Min(len(lines), allowedHeight) {
+		l := t.RenderLine(lines[y], t.alignment, allowedWidth)
+		for x := range utils.Min(len(l), allowedWidth) {
+			s.Put(c.AbsX()+x+1, c.AbsY()+1+y, l[x:x+1], c.Style())
+		}
+	}
 	return nil
 }
