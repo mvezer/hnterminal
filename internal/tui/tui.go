@@ -10,7 +10,6 @@ import (
 	"github.com/gdamore/tcell/v3/color"
 	"log"
 	"os"
-	"strings"
 	"sync"
 )
 
@@ -21,15 +20,6 @@ const (
 	LayoutVerticalGrid
 	LayoutFill
 	LayoutFloat
-)
-
-type TextAlignment int
-
-const (
-	TextAlignmentLeft TextAlignment = iota
-	TextAlignmentCenter
-	TextAlignmentRight
-	TextAlignmentJustify
 )
 
 // ----------------- TUI -----------------
@@ -67,7 +57,7 @@ func New(config *config.Config) *TUI {
 
 	// boxStyle := tcell.StyleDefault.Foreground(color.Green).Background(color.Purple)
 	// newBoxStyle := tcell.StyleDefault.Foreground(color.Green).Background(color.Green)
-	root := tui.NewBox(0, 0, 0, 0, 0)
+	root := tui.NewBox()
 	root.SetLayout(LayoutFill)
 	tui.root = &root
 
@@ -83,12 +73,15 @@ func New(config *config.Config) *TUI {
 	return tui
 }
 
-func (t *TUI) CalculateGridGeometry(components []*Component, parentComponent *Component) []int {
+func (t *TUI) CalculateGridGeometry(component *Component) []int {
+	components := component.GetSiblings()
+	parentComponent := component.Parent()
 	sizes := make([]int, len(components))
-	targetSize := parentComponent.Width()
+	targetSize := parentComponent.Width() - parentComponent.Padding()*2
 	if parentComponent.Layout() == LayoutVerticalGrid {
-		targetSize = parentComponent.Height()
+		targetSize = parentComponent.Height() - parentComponent.Padding()*2
 	}
+	targetSize -= component.Padding() * 2
 	defaultSize := targetSize / len(components)
 	fixedSize := 0
 	fixedComponents := make(map[int]bool, 0)
@@ -131,13 +124,13 @@ func (t *TUI) CalculateGridGeometry(components []*Component, parentComponent *Co
 			}
 		}
 	}
-	offset := 0
+	offset := parentComponent.Padding()
 	ids := make([]int, len(components))
 	for i, c := range components {
 		if parentComponent.Layout() == LayoutHorizontalGrid {
-			c.SetGeometry(offset, 0, sizes[i], parentComponent.Height())
+			c.SetGeometry(offset, parentComponent.Padding(), sizes[i], parentComponent.Height()-parentComponent.padding*2)
 		} else {
-			c.SetGeometry(0, offset, parentComponent.Width(), sizes[i])
+			c.SetGeometry(parentComponent.Padding(), offset, parentComponent.Width()-parentComponent.padding*2, sizes[i])
 		}
 		offset += sizes[i]
 		ids[i] = c.Id()
@@ -165,10 +158,10 @@ func (t *TUI) UpdateGeometry(rootComponent *Component) {
 				c.SetGeometry(0, 0, screenWidth, screenHeight)
 				processed[c.Id()] = true
 			} else if c.Parent().Layout() == LayoutFill {
-				c.SetGeometry(0, 0, c.Parent().Width(), c.Parent().Height())
+				c.SetGeometry(c.Parent().Padding(), c.Parent().Padding(), c.Parent().Width()-c.Parent().Padding(), c.Parent().Height()-c.Parent().Padding())
 				processed[c.Id()] = true
 			} else if !c.IsRoot() && (c.Parent().Layout() == LayoutHorizontalGrid || c.Parent().Layout() == LayoutVerticalGrid) {
-				for _, i := range t.CalculateGridGeometry(c.GetSiblings(), c.Parent()) {
+				for _, i := range t.CalculateGridGeometry(c) {
 					processed[i] = true
 				}
 			}
@@ -214,48 +207,24 @@ func (t *TUI) NextId() int {
 	return t.maxId
 }
 
-func (t *TUI) NewComponent(width int, height int, x int, y int, spec ComponentSpec) Component {
-	return Component{
-		id:        t.NextId(),
-		tui:       t,
-		width:     width,
-		height:    height,
-		minWidth:  -1,
-		maxWidth:  -1,
-		minHeight: -1,
-		maxHeight: -1,
-		x:         x,
-		y:         y,
-		children:  make([]*Component, 0),
-		parent:    nil,
-		style:     t.defaultStyle,
-		layout:    LayoutFill,
-		floating:  false,
-		zIndex:    -1,
-		spec:      spec,
-	}
-}
-
 func (t *TUI) Run() {
-	box1 := t.NewBox(0, 0, 0, 0, 0)
+	box1 := t.NewBox()
 	box1.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Green))
-	box2 := t.NewBox(0, 0, 0, 0, 0)
+	box2 := t.NewBox()
 	box2.SetLayout(LayoutVerticalGrid)
 	box2.SetStyle(tcell.StyleDefault.Foreground(color.Red).Background(color.LightCyan))
-	box3 := t.NewBox(0, 0, 0, 0, 0)
+	box3 := t.NewBox()
 	box3.SetLayout(LayoutVerticalGrid)
 	box3.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Red))
 	for i := range 5 {
-		b := t.NewBox(0, 0, 0, 0, 0)
+		b := t.NewBox()
 		if i%2 == 0 {
 			b.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Black))
 		} else {
 			b.SetStyle(tcell.StyleDefault.Foreground(color.Black).Background(color.White))
 		}
 		if i == 2 {
-			t := t.NewText(0, 0, 0, 0, 1,
-				"Everyone is a genius. But if you judge a fish by its ability to climb a tree, it will live its whole life believing that it is stupid.",
-				true, TextAlignmentJustify)
+			t := t.NewText("Everyone is a genius. But if you judge a fish by its ability to climb a tree, it will live its whole life believing that it is stupid.")
 			t.SetLayout(LayoutFill)
 			b.AddChild(&t)
 		}
@@ -267,9 +236,13 @@ func (t *TUI) Run() {
 			b.SetMinHeight(25)
 			b.SetStyle(tcell.StyleDefault.Foreground(color.Black).Background(color.Yellow))
 		}
+		if i == 4 {
+			b.Spec().(*Box).SetBorder(BorderStyleDouble)
+		}
 		box2.AddChild(&b)
 	}
 	t.root.SetLayout(LayoutHorizontalGrid)
+	t.root.SetPadding(1)
 	t.root.AddChild(&box1)
 	t.root.AddChild(&box2)
 	t.root.AddChild(&box3)
@@ -303,385 +276,4 @@ func (t *TUI) Quit() {
 	if maybePanic != nil {
 		panic(maybePanic)
 	}
-}
-
-// ----------------- Component -----------------
-type ComponentSpec interface {
-	Draw(*Component) error
-}
-
-type Component struct {
-	id        int
-	tui       *TUI
-	width     int
-	height    int
-	minWidth  int
-	minHeight int
-	maxWidth  int
-	maxHeight int
-	x         int
-	y         int
-	children  []*Component
-	parent    *Component
-	style     tcell.Style
-	layout    Layout
-	floating  bool
-	zIndex    int
-	spec      ComponentSpec
-}
-
-func (c *Component) AddChild(newChild *Component) error {
-	c.tui.mutex.Lock()
-	newChild.SetZIndex(c.zIndex + 1)
-	newChild.SetParent(c)
-	c.children = append(c.children, newChild)
-	c.tui.mutex.Unlock()
-	return nil
-}
-
-func (c *Component) RemoveChild(id int) error {
-	for i, child := range c.children {
-		if child.Id() == id {
-			c.children = append(c.children[:i], c.children[i+1:]...)
-			return nil
-		}
-	}
-	return fmt.Errorf("element (%d) not found", id)
-}
-
-func (c *Component) Children() []*Component {
-	return c.children
-}
-
-func (c *Component) SetParent(newParent *Component) {
-	c.parent = newParent
-}
-
-func (c *Component) Parent() *Component {
-	return c.parent
-}
-
-func (c *Component) IsRoot() bool {
-	return c.Parent() == nil
-}
-
-func (c *Component) GetSiblings() []*Component {
-	if c.IsRoot() {
-		return make([]*Component, 0)
-	}
-	siblings := c.Parent().Children()
-	siblingsCopy := make([]*Component, len(siblings))
-	copy(siblingsCopy, siblings)
-	slices.SortFunc(siblingsCopy, func(a, b *Component) int {
-		return a.Id() - b.Id()
-	})
-	return siblingsCopy
-}
-
-func (c *Component) Style() tcell.Style {
-	return c.style
-}
-
-func (c *Component) SetStyle(style tcell.Style) {
-	c.tui.mutex.Lock()
-	c.style = style
-	c.tui.mutex.Unlock()
-}
-
-func (c *Component) Width() int {
-	return c.width
-}
-
-func (c *Component) MinWidth() int {
-	return c.minWidth
-}
-
-func (c *Component) MaxWidth() int {
-	return c.maxWidth
-}
-
-func (c *Component) MinHeight() int {
-	return c.minHeight
-}
-
-func (c *Component) MaxHeight() int {
-	return c.maxHeight
-}
-
-func (c *Component) SetMinWidth(minWidth int) {
-	c.minWidth = minWidth
-}
-
-func (c *Component) SetMaxWidth(maxWidth int) {
-	c.maxWidth = maxWidth
-}
-
-func (c *Component) SetMinHeight(minHeight int) {
-	c.minHeight = minHeight
-}
-
-func (c *Component) SetMaxHeight(maxHeight int) {
-	c.maxHeight = maxHeight
-}
-
-func (c *Component) SetWidth(width int) bool {
-	if c.width == width {
-		return false
-	}
-	c.tui.mutex.Lock()
-	c.width = width
-	c.tui.mutex.Unlock()
-	return true
-}
-
-func (c *Component) Height() int {
-	return c.height
-}
-
-func (c *Component) SetHeight(height int) bool {
-	if c.height == height {
-		return false
-	}
-	c.height = height
-	return true
-}
-
-func (c *Component) X() int {
-	return c.x
-}
-func (c *Component) AbsX() int {
-	if c.IsRoot() {
-		return c.x
-	}
-	return c.x + c.Parent().AbsX()
-}
-
-func (c *Component) SetX(x int) bool {
-	if c.x == x {
-		return false
-	}
-	c.x = x
-	return true
-}
-
-func (c *Component) Y() int {
-	return c.y
-}
-
-func (c *Component) AbsY() int {
-	if c.IsRoot() {
-		return c.y
-	}
-	return c.y + c.Parent().AbsY()
-}
-
-func (c *Component) SetY(y int) bool {
-	if c.y == y {
-		return false
-	}
-	c.y = y
-	return true
-}
-
-func (c *Component) Screen() tcell.Screen {
-	return c.tui.screen
-}
-
-func (c *Component) Id() int {
-	return c.id
-}
-
-func (c *Component) Root() *Component {
-	return c.tui.root
-}
-
-func (c *Component) Spec() ComponentSpec {
-	return c.spec
-}
-
-func (c *Component) Draw() error {
-	return c.spec.Draw(c)
-}
-
-func (c *Component) Layout() Layout {
-	return c.layout
-}
-
-func (c *Component) SetLayout(layout Layout) {
-	c.layout = layout
-}
-
-func (c *Component) Floating() bool {
-	return c.floating
-}
-
-func (c *Component) SetZIndex(zIndex int) {
-	c.zIndex = zIndex
-}
-
-func (c *Component) ZIndex() int {
-	return c.zIndex
-}
-
-func (c *Component) HasChildren() bool {
-	return len(c.children) > 0
-}
-
-func (c *Component) SetGeometry(x int, y int, width int, height int) bool {
-	geometryChanged := c.SetX(x)
-	geometryChanged = c.SetY(y) || geometryChanged
-	geometryChanged = c.SetWidth(width) || geometryChanged
-	geometryChanged = c.SetHeight(height) || geometryChanged
-	if geometryChanged {
-		c.tui.AddToDrawMap(c)
-	}
-	return geometryChanged
-}
-
-func (c *Component) Traverse() []*Component {
-	result := make([]*Component, 0)
-	result = append(result, c)
-	i := 0
-	for i < len(result) {
-		e := result[i]
-		i++
-		for _, c := range (*e).Children() {
-			result = append(result, c)
-		}
-	}
-	return result
-}
-
-func (c *Component) Size() (int, int) {
-	return c.width, c.height
-}
-
-func (c *Component) SetSize(width int, height int) {
-	c.width = width
-	c.height = height
-}
-
-// ----------------- Box -----------------
-type Box struct {
-	Padding int
-}
-
-func (b Box) Draw(c *Component) error {
-	c.tui.mutex.Lock()
-	s := c.Screen()
-	for x := range c.Width() {
-		for y := range c.Height() {
-			s.Put(c.AbsX()+x, c.AbsY()+y, " ", c.style)
-		}
-	}
-	c.tui.mutex.Unlock()
-	return nil
-}
-func (t *TUI) NewBox(width int, height int, x int, y int, padding int) Component {
-	return t.NewComponent(width, height, x, y, Box{Padding: padding})
-}
-
-// ----------------- Text -----------------
-type Text struct {
-	alignment TextAlignment
-	wordWrap  bool
-	text      string
-}
-
-func (t *TUI) NewText(width int, height int, x int, y int, padding int, text string, wordWrap bool, alignment TextAlignment) Component {
-	return t.NewComponent(width, height, x, y, &Text{alignment: alignment, wordWrap: wordWrap, text: text})
-}
-
-func (t *Text) SetText(text string) {
-	t.text = text
-}
-
-func (t *Text) SetAlignment(alignment TextAlignment) {
-	t.alignment = alignment
-}
-
-func (t *Text) SetWordWrap(wordWrap bool) {
-	t.wordWrap = wordWrap
-}
-
-func (t *Text) Text() string {
-	return t.text
-}
-
-func (t *Text) Alignment() TextAlignment {
-	return t.alignment
-}
-
-func (t *Text) RenderLine(words []string, alignment TextAlignment, allowedWidth int) string {
-	if len(words) == 0 {
-		return ""
-	}
-	res := ""
-	switch alignment {
-	case TextAlignmentLeft:
-		res = strings.Join(words, " ")
-	case TextAlignmentRight:
-		s := strings.Join(words, " ")
-		res = strings.Repeat(" ", allowedWidth-len(s)) + s
-	case TextAlignmentCenter:
-		s := strings.Join(words, " ")
-		spacesBefore := (allowedWidth - len(s)) / 2
-		spacesAfter := (allowedWidth - len(s)) - spacesBefore
-		res = strings.Repeat(" ", spacesBefore) + s + strings.Repeat(" ", spacesAfter)
-	case TextAlignmentJustify:
-		if len(words) == 1 {
-			res = words[0]
-			break
-		}
-		fillLength := allowedWidth - len(strings.Join(words, " "))
-		spaces := make([]int, len(words)-1)
-		i := 0
-		for fillLength > 0 {
-			if i == len(spaces)-1 {
-				i = 0
-			}
-			spaces[i] += 1
-			fillLength -= 1
-			i++
-		}
-		res = ""
-		for i := range words {
-			res += words[i]
-			if i < len(words)-1 {
-				res += strings.Repeat(" ", spaces[i]+1)
-			}
-		}
-	}
-	return res
-}
-
-func (t *Text) Draw(c *Component) error {
-	s := c.Screen()
-	lines := make([][]string, 0)
-	allowedWidth := c.Width() - 2 // TODO: add dynamic padding
-	words := strings.Split(t.text, " ")
-	currentLength := 0
-	currentLine := make([]string, 0)
-	for _, w := range words {
-		if currentLength+len(w)+1 > allowedWidth {
-			lines = append(lines, currentLine)
-			currentLine = make([]string, 0)
-			currentLine = append(currentLine, w)
-			currentLength = len(w)
-		} else {
-			currentLine = append(currentLine, w)
-			currentLength += len(w) + 1
-		}
-	}
-	if len(currentLine) > 0 {
-		lines = append(lines, currentLine)
-	}
-	allowedHeight := c.Height() - 2 // TODO: add dynamic padding
-	for y := range utils.Min(len(lines), allowedHeight) {
-		l := t.RenderLine(lines[y], t.alignment, allowedWidth)
-		for x := range utils.Min(len(l), allowedWidth) {
-			s.Put(c.AbsX()+x+1, c.AbsY()+1+y, l[x:x+1], c.Style())
-		}
-	}
-	return nil
 }
