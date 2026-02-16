@@ -5,12 +5,14 @@ import (
 	"hnterminal/internal/config"
 	"hnterminal/internal/utils"
 	"slices"
+	"strings"
 
-	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"log"
 	"os"
 	"sync"
+
+	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 )
 
 type Layout int
@@ -20,6 +22,22 @@ const (
 	LayoutVerticalGrid
 	LayoutFill
 	LayoutFloat
+)
+
+type HorizontalAlignment int
+
+const (
+	HorizontalAlignmentLeft HorizontalAlignment = iota
+	HorizontalAlignmentCenter
+	HorizontalAlignmentRight
+)
+
+type VerticalAlignment int
+
+const (
+	VerticalAlignmentTop VerticalAlignment = iota
+	VerticalAlignmentCenter
+	VerticalAlignmentBottom
 )
 
 // ----------------- TUI -----------------
@@ -75,6 +93,13 @@ func New(config *config.Config) *TUI {
 
 func (t *TUI) CalculateGridGeometry(component *Component) []int {
 	components := component.GetSiblings()
+	// Remove floating components
+	for i := range components {
+		if components[i].Floating() {
+			components = components[:i]
+			break
+		}
+	}
 	parentComponent := component.Parent()
 	sizes := make([]int, len(components))
 	targetSize := parentComponent.Width() - parentComponent.Padding()*2
@@ -88,7 +113,7 @@ func (t *TUI) CalculateGridGeometry(component *Component) []int {
 	calcutatedSize := 0
 	for i, c := range components {
 		max := c.MaxWidth()
-		min := c.MaxHeight()
+		min := c.MinWidth()
 		if parentComponent.Layout() == LayoutVerticalGrid {
 			max = c.MaxHeight()
 			min = c.MinHeight()
@@ -152,7 +177,25 @@ func (t *TUI) UpdateGeometry(rootComponent *Component) {
 		}
 		screenWidth, screenHeight := t.screen.Size()
 		if c.Floating() {
-			c.SetGeometry(utils.Max(c.X(), 0), utils.Max(c.Y(), 0), utils.Min(c.Width(), screenWidth-c.X()), utils.Min(c.Height(), screenHeight-c.Y()))
+			x := 0
+			y := 0
+			switch c.HorizontalAlignment() {
+			case HorizontalAlignmentLeft:
+				x = 0
+			case HorizontalAlignmentCenter:
+				x = (screenWidth - c.Width()) / 2
+			case HorizontalAlignmentRight:
+				x = screenWidth - c.Width()
+			}
+			switch c.VerticalAlignment() {
+			case VerticalAlignmentTop:
+				y = 0
+			case VerticalAlignmentCenter:
+				y = (screenHeight - c.Height()) / 2
+			case VerticalAlignmentBottom:
+				y = screenHeight - c.Height()
+			}
+			c.SetGeometry(x, y, c.Width(), c.Height())
 		} else {
 			if c.IsRoot() {
 				c.SetGeometry(0, 0, screenWidth, screenHeight)
@@ -172,25 +215,27 @@ func (t *TUI) UpdateGeometry(rootComponent *Component) {
 func (t *TUI) DrawAll() error {
 	drawQueue := make([]*Component, 0)
 	for _, c := range t.drawMap {
-		drawQueue = append(drawQueue, c)
-	}
-	slices.SortFunc(drawQueue, func(a, b *Component) int {
-		if a.Floating() && b.Floating() {
-			return a.Id() - b.Id()
-		} else if a.Floating() {
-			return -1
-		} else if b.Floating() {
-			return 1
+		// check if the component is fully covered or not
+		if !c.FullyCovered() {
+			// if not fully covered we add it to the draw queue
+			drawQueue = append(drawQueue, c)
 		}
+	}
+	// sort the draw queue by z-index
+	slices.SortFunc(drawQueue, func(a, b *Component) int {
 		if a.ZIndex() == b.ZIndex() {
 			return a.Id() - b.Id()
 		}
 		return a.ZIndex() - b.ZIndex()
 	})
+	var drawLog strings.Builder
 	for _, e := range drawQueue {
 		e.Draw()
+		fmt.Fprintf(&drawLog, "[%d]", e.Id())
 	}
 	t.ClearDrawMap()
+	log.Println(drawLog.String())
+	t.screen.Show()
 	return nil
 }
 
@@ -205,6 +250,56 @@ func (t *TUI) ClearDrawMap() {
 func (t *TUI) NextId() int {
 	t.maxId++
 	return t.maxId
+}
+
+func (t *TUI) GetComponent(id int) *Component {
+	for _, c := range t.root.Traverse() {
+		if c.Id() == id {
+			return c
+		}
+	}
+	return nil
+}
+
+func (t *TUI) RemoveComponent(id int) error {
+	componentToRemove := t.GetComponent(id)
+	if componentToRemove == nil {
+		return nil
+	}
+	if !componentToRemove.IsRoot() {
+		componentToRemove.Parent().RemoveChild(id)
+		componentToRemove.RemoveChildren()
+	}
+	for _, c := range componentToRemove.Traverse() {
+		c.SetParent(nil)
+		c.RemoveChildren()
+	}
+	return nil
+}
+
+var floatBoxId int = -1
+
+func toggleFloatBox(t *TUI) {
+	var f Component
+	if floatBoxId == -1 {
+		f = t.NewFloatingBox()
+		f.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Green))
+		f.SetPadding(2)
+		f.Spec().(*Box).SetBorder(BorderStyleRounded)
+		f.SetWidth(10)
+		f.SetHeight(10)
+		f.SetX(10)
+		text := t.NewText("Hello World")
+		text.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Green))
+		f.AddChild(&text)
+		t.root.AddChild(&f)
+		floatBoxId = f.Id()
+		t.UpdateGeometry(&f)
+	} else {
+		t.RemoveComponent(floatBoxId)
+		floatBoxId = -1
+		t.UpdateGeometry(nil)
+	}
 }
 
 func (t *TUI) Run() {
@@ -242,24 +337,36 @@ func (t *TUI) Run() {
 		box2.AddChild(&b)
 	}
 	t.root.SetLayout(LayoutHorizontalGrid)
-	t.root.SetPadding(1)
 	t.root.AddChild(&box1)
 	t.root.AddChild(&box2)
 	t.root.AddChild(&box3)
+	box1.SetMinWidth(30)
+	box1.SetMaxWidth(30)
+	t.UpdateGeometry(nil)
+	t.screen.Show()
 	defer t.Quit()
 	for {
-		t.UpdateGeometry(nil)
 		t.DrawAll()
-		t.screen.Show()
 		ev := <-t.screen.EventQ()
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
+			t.UpdateGeometry(nil)
 			t.screen.Sync()
 		case *tcell.EventKey:
 			switch ev.Key() {
 			case tcell.KeyCtrlC, tcell.KeyEscape:
 				t.Quit()
 				return
+			case tcell.KeyRight:
+				box1.SetMinWidth(box1.MinWidth() + 1)
+				box1.SetMaxWidth(box1.MaxWidth() + 1)
+				t.UpdateGeometry(nil)
+			case tcell.KeyLeft:
+				box1.SetMinWidth(box1.MinWidth() - 1)
+				box1.SetMaxWidth(box1.MaxWidth() - 1)
+				t.UpdateGeometry(nil)
+			case tcell.KeyEnter:
+				toggleFloatBox(t)
 			// case tcell.KeyEnter:
 			// case tcell.KeyRune:
 			// 	fmt.Printf("Rune: %c\n", ev.())

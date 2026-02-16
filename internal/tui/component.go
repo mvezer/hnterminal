@@ -6,35 +6,39 @@ import (
 	"slices"
 )
 
+const ZINDEX_FLOAT = 10000
+
 // ----------------- Component -----------------
 type ComponentSpec interface {
 	Draw(*Component) error
 }
 
 type Component struct {
-	id        int
-	tui       *TUI
-	width     int
-	height    int
-	minWidth  int
-	minHeight int
-	maxWidth  int
-	maxHeight int
-	x         int
-	y         int
-	children  []*Component
-	parent    *Component
-	style     tcell.Style
-	layout    Layout
-	floating  bool
-	zIndex    int
-	spec      ComponentSpec
-	padding   int
+	id                  int
+	tui                 *TUI
+	width               int
+	height              int
+	minWidth            int
+	minHeight           int
+	maxWidth            int
+	maxHeight           int
+	x                   int
+	y                   int
+	children            []*Component
+	parent              *Component
+	style               tcell.Style
+	layout              Layout
+	floating            bool
+	zIndex              int
+	spec                ComponentSpec
+	padding             int
+	horizontalAlignment HorizontalAlignment
+	verticalAlignment   VerticalAlignment
 }
 
 func (c *Component) AddChild(newChild *Component) error {
 	c.tui.mutex.Lock()
-	newChild.SetZIndex(c.zIndex + 1)
+	newChild.SetZIndex(c.zIndex + ZINDEX_FLOAT + 1)
 	newChild.SetParent(c)
 	c.children = append(c.children, newChild)
 	c.tui.mutex.Unlock()
@@ -49,6 +53,11 @@ func (c *Component) RemoveChild(id int) error {
 		}
 	}
 	return fmt.Errorf("element (%d) not found", id)
+}
+
+func (c *Component) RemoveChildren() error {
+	c.children = make([]*Component, 0)
+	return nil
 }
 
 func (c *Component) Children() []*Component {
@@ -234,7 +243,7 @@ func (c *Component) SetGeometry(x int, y int, width int, height int) bool {
 	geometryChanged = c.SetY(y) || geometryChanged
 	geometryChanged = c.SetWidth(width) || geometryChanged
 	geometryChanged = c.SetHeight(height) || geometryChanged
-	if geometryChanged {
+	if geometryChanged || true {
 		c.tui.AddToDrawMap(c)
 	}
 	return geometryChanged
@@ -271,25 +280,67 @@ func (c *Component) SetPadding(padding int) {
 	c.padding = padding
 }
 
-func (t *TUI) NewComponent(spec ComponentSpec) Component {
+func (c *Component) FullyCovered() bool {
+	isFullyCovered := false
+	// surely not covered if it has no children (so it's a leaf) or padding
+	if !c.HasChildren() || c.Padding() != 0 {
+		isFullyCovered = false
+	} else if c.Layout() == LayoutFill || c.Layout() == LayoutHorizontalGrid || c.Layout() == LayoutVerticalGrid {
+		// if it has any kind of fill layout and has at least one box child, it's fully covered
+		for _, c := range c.Children() {
+			if _, isBox := c.Spec().(*Box); isBox {
+				isFullyCovered = true
+				break
+			}
+		}
+	}
+	return isFullyCovered
+}
+
+func (c *Component) SetHorizontalAlignment(alignment HorizontalAlignment) {
+	if c.horizontalAlignment == alignment {
+		return
+	}
+	c.horizontalAlignment = alignment
+	c.tui.UpdateGeometry(c)
+}
+
+func (c *Component) SetVerticalAlignment(alignment VerticalAlignment) {
+	if c.verticalAlignment == alignment {
+		return
+	}
+	c.verticalAlignment = alignment
+	c.tui.UpdateGeometry(c)
+}
+
+func (c *Component) HorizontalAlignment() HorizontalAlignment {
+	return c.horizontalAlignment
+}
+
+func (c *Component) VerticalAlignment() VerticalAlignment {
+	return c.verticalAlignment
+}
+func (t *TUI) NewComponent(spec ComponentSpec, isFloating bool) Component {
 	return Component{
-		id:        t.NextId(),
-		tui:       t,
-		width:     0,
-		height:    0,
-		minWidth:  -1,
-		maxWidth:  -1,
-		minHeight: -1,
-		maxHeight: -1,
-		x:         0,
-		y:         0,
-		children:  make([]*Component, 0),
-		parent:    nil,
-		style:     t.defaultStyle,
-		layout:    LayoutFill,
-		floating:  false,
-		zIndex:    -1,
-		spec:      spec,
-		padding:   0,
+		id:                  t.NextId(),
+		tui:                 t,
+		width:               0,
+		height:              0,
+		minWidth:            -1,
+		maxWidth:            -1,
+		minHeight:           -1,
+		maxHeight:           -1,
+		x:                   0,
+		y:                   0,
+		children:            make([]*Component, 0),
+		parent:              nil,
+		style:               t.defaultStyle,
+		layout:              LayoutFill,
+		floating:            isFloating,
+		zIndex:              -1,
+		spec:                spec,
+		padding:             0,
+		horizontalAlignment: HorizontalAlignmentCenter,
+		verticalAlignment:   VerticalAlignmentCenter,
 	}
 }

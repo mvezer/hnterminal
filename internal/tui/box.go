@@ -92,5 +92,9 @@ func (b *Box) SetBorder(border BorderStyle) {
 }
 
 func (t *TUI) NewBox() Component {
-	return t.NewComponent(&Box{padding: 0, border: BorderStyleNone})
+	return t.NewComponent(&Box{padding: 0, border: BorderStyleNone}, false)
+}
+
+func (t *TUI) NewFloatingBox() Component {
+	return t.NewComponent(&Box{padding: 0, border: BorderStyleNone}, true)
 }

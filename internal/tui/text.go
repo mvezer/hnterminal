@@ -115,5 +115,5 @@ func (t *Text) Draw(c *Component) error {
 }
 
 func (t *TUI) NewText(text string) Component {
-	return t.NewComponent(&Text{alignment: TextAlignmentLeft, wordWrap: true, text: text})
+	return t.NewComponent(&Text{alignment: TextAlignmentLeft, wordWrap: true, text: text}, false)
 }
