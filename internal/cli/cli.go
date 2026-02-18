@@ -45,7 +45,7 @@ func (c *Cli) Run() {
 		if err != nil {
 			fmt.Println(err)
 		}
-		storiesCount := utils.Min(len(topStories), c.config.StoryCount)
+		storiesCount := min(len(topStories), c.config.StoryCount)
 		stories, err := c.repo.GetItems(topStories[:storiesCount])
 		if err != nil {
 			utils.HandleError(err, utils.ErrorSeverityFatal)

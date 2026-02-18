@@ -25,16 +25,9 @@ func HandleError(err error, severity ErrorSeverity) {
 	}
 }
 
-func Max[T int | float64](x, y T) T {
-	if x > y {
-		return x
+func Abs[T int | float64](x T) T {
+	if x < 0 {
+		return -x
 	}
-	return y
-}
-
-func Min[T int | float64](x, y T) T {
-	if x < y {
-		return x
-	}
-	return y
+	return x
 }

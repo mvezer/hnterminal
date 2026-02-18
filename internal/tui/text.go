@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"hnterminal/internal/utils"
 	"strings"
 )
 
@@ -105,9 +104,9 @@ func (t *Text) Draw(c *Component) error {
 		lines = append(lines, currentLine)
 	}
 	allowedHeight := c.Height() - 2 // TODO: add dynamic padding
-	for y := range utils.Min(len(lines), allowedHeight) {
+	for y := range min(len(lines), allowedHeight) {
 		l := t.RenderLine(lines[y], t.alignment, allowedWidth)
-		for x := range utils.Min(len(l), allowedWidth) {
+		for x := range min(len(l), allowedWidth) {
 			s.Put(c.AbsX()+x+1, c.AbsY()+1+y, l[x:x+1], c.Style())
 		}
 	}

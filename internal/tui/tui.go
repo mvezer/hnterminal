@@ -80,7 +80,7 @@ func New(config *config.Config) *TUI {
 	tui.root = &root
 
 	// set up logging
-	f, err := os.OpenFile("hnreader.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	f, err := os.OpenFile("hnreader.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
@@ -91,66 +91,119 @@ func New(config *config.Config) *TUI {
 	return tui
 }
 
-func (t *TUI) CalculateGridGeometry(component *Component) []int {
-	components := component.GetSiblings()
-	// Remove floating components
-	for i := range components {
-		if components[i].Floating() {
-			components = components[:i]
-			break
-		}
+func (t *TUI) NormalizePercentages(percentages []float64) []float64 {
+	normalizedPercentages := make([]float64, len(percentages))
+	percentSum := 0.0
+	for _, p := range percentages {
+		percentSum += p
 	}
+	correctionFactor := 100.0 / percentSum
+	for i := range percentages {
+		normalizedPercentages[i] = percentages[i] * correctionFactor
+	}
+	return normalizedPercentages
+}
+
+func (t *TUI) CalculateGridGeometry(component *Component) []int {
 	parentComponent := component.Parent()
-	sizes := make([]int, len(components))
 	targetSize := parentComponent.Width() - parentComponent.Padding()*2
 	if parentComponent.Layout() == LayoutVerticalGrid {
 		targetSize = parentComponent.Height() - parentComponent.Padding()*2
 	}
-	targetSize -= component.Padding() * 2
-	defaultSize := targetSize / len(components)
-	fixedSize := 0
-	fixedComponents := make(map[int]bool, 0)
-	calcutatedSize := 0
-	for i, c := range components {
-		max := c.MaxWidth()
-		min := c.MinWidth()
-		if parentComponent.Layout() == LayoutVerticalGrid {
-			max = c.MaxHeight()
-			min = c.MinHeight()
-		}
-		if max > 0 && defaultSize > max {
-			fixedComponents[i] = true
-			sizes[i] = max
-			fixedSize += max
-		} else if min > 0 && defaultSize < min {
-			fixedComponents[i] = true
-			sizes[i] = min
-			fixedSize += min
-		} else {
-			sizes[i] = defaultSize
-		}
-		calcutatedSize += sizes[i]
-	}
-	if len(fixedComponents) > 0 && calcutatedSize != targetSize {
-		calcutatedSize = 0
-		defaultSize = (targetSize - fixedSize) / (len(components) - len(fixedComponents))
-		for i := range components {
-			if !fixedComponents[i] {
-				sizes[i] = defaultSize
-			}
-			calcutatedSize += sizes[i]
+	layout := parentComponent.Layout()
+	components := make([]*Component, 0)
+	// Remove floating components
+	for _, c := range component.GetSiblings() {
+		if !c.Floating() {
+			components = append(components, c)
 		}
 	}
-	if calcutatedSize != targetSize {
-		for i := range components {
-			if !fixedComponents[i] {
-				sizes[i] += targetSize - calcutatedSize
-				break
-			}
-		}
-	}
-	offset := parentComponent.Padding()
+
 	ids := make([]int, len(components))
+	if len(components) == 0 {
+		return nil
+	}
+	percentages := make([]float64, len(components))
+	setPercentagesCount := 0
+	percentagesSum := 0.0
+	for i, c := range components {
+		if layout == LayoutVerticalGrid {
+			if c.HeightPercent() > 0 {
+				percentages[i] = float64(c.HeightPercent())
+				percentagesSum += percentages[i]
+				setPercentagesCount++
+			}
+			percentages[i] = float64(c.HeightPercent())
+		} else {
+			if c.WidthPercent() > 0 {
+				percentages[i] = float64(c.WidthPercent())
+				percentagesSum += percentages[i]
+				setPercentagesCount++
+			}
+		}
+	}
+	fillPercentage := 100.0 / float64(len(components))
+	if percentagesSum < 100.0 {
+		fillPercentage = (100.0 - percentagesSum) / float64(len(components)-setPercentagesCount)
+	}
+	for i, p := range percentages {
+		if p == 0 {
+			percentages[i] = fillPercentage
+		}
+	}
+	percentages = t.NormalizePercentages(percentages)
+
+	// correct the percentages for the min/max sizes
+	for i, c := range components {
+		if layout == LayoutVerticalGrid {
+			if c.MinHeight() > 0 && percentages[i]/100.0*float64(targetSize) < float64(c.MinHeight())/100.0*float64(targetSize) {
+				percentages[i] = float64(c.MinHeight()) / float64(targetSize) * 100.0
+			} else if c.MaxHeight() > 0 && percentages[i]/100.0*float64(targetSize) > float64(c.MaxHeight())/100.0*float64(targetSize) {
+				percentages[i] = float64(c.MaxHeight()) / float64(targetSize) * 100.0
+			}
+		} else {
+			if c.MinWidth() > 0 && percentages[i]/100.0*float64(targetSize) < float64(c.MinWidth())/100.0*float64(targetSize) {
+				percentages[i] = float64(c.MinWidth()) / float64(targetSize) * 100.0
+			} else if c.MaxWidth() > 0 && percentages[i]/100.0*float64(targetSize) > float64(c.MaxWidth())/100.0*float64(targetSize) {
+				percentages[i] = float64(c.MaxWidth()) / float64(targetSize) * 100.0
+			}
+		}
+	}
+	percentages = t.NormalizePercentages(percentages)
+	sizes := make([]int, len(components))
+	for i, p := range percentages {
+		sizes[i] = int(float64(targetSize) * p / 100.0)
+	}
+
+	// need to correnct the sizes after the float->int conversion
+	sumSizes := 0
+	for _, s := range sizes {
+		sumSizes += s
+	}
+
+	if sumSizes != targetSize { // well if there's a difference we need to correct it
+		// components that's size can be modified
+		flexibleComponents := make([]int, 0)
+		for i, c := range components {
+			if (layout == LayoutVerticalGrid && c.MinHeight() > 0 && c.MaxHeight() > 0) || (layout == LayoutHorizontalGrid && c.MinWidth() > 0 && c.MaxWidth() > 0) {
+				flexibleComponents = append(flexibleComponents, i)
+			}
+		}
+		sizeDiff := targetSize - sumSizes
+		i := 0
+		for sizeDiff != 0 {
+			d := sizeDiff / utils.Abs(sizeDiff)
+			if len(flexibleComponents) > i {
+				sizes[flexibleComponents[i]] += d
+			} else {
+				sizes[min(i, len(sizes)-1)] += d
+			}
+			sizeDiff -= d
+			i++
+		}
+	}
+
+	offset := parentComponent.Padding()
 	for i, c := range components {
 		if parentComponent.Layout() == LayoutHorizontalGrid {
 			c.SetGeometry(offset, parentComponent.Padding(), sizes[i], parentComponent.Height()-parentComponent.padding*2)
@@ -234,7 +287,7 @@ func (t *TUI) DrawAll() error {
 		fmt.Fprintf(&drawLog, "[%d]", e.Id())
 	}
 	t.ClearDrawMap()
-	log.Println(drawLog.String())
+	// log.Println(drawLog.String())
 	t.screen.Show()
 	return nil
 }
@@ -305,6 +358,8 @@ func toggleFloatBox(t *TUI) {
 func (t *TUI) Run() {
 	box1 := t.NewBox()
 	box1.SetStyle(tcell.StyleDefault.Foreground(color.White).Background(color.Green))
+	box1.SetWidthPercent(50.0)
+	box1.SetMinWidth(80)
 	box2 := t.NewBox()
 	box2.SetLayout(LayoutVerticalGrid)
 	box2.SetStyle(tcell.StyleDefault.Foreground(color.Red).Background(color.LightCyan))
@@ -340,8 +395,6 @@ func (t *TUI) Run() {
 	t.root.AddChild(&box1)
 	t.root.AddChild(&box2)
 	t.root.AddChild(&box3)
-	box1.SetMinWidth(30)
-	box1.SetMaxWidth(30)
 	t.UpdateGeometry(nil)
 	t.screen.Show()
 	defer t.Quit()
@@ -376,6 +429,7 @@ func (t *TUI) Run() {
 		}
 	}
 }
+
 func (t *TUI) Quit() {
 	fmt.Println("Bye")
 	maybePanic := recover()

@@ -22,6 +22,8 @@ type Component struct {
 	minHeight           int
 	maxWidth            int
 	maxHeight           int
+	widthPercent        float64
+	heightPercent       float64
 	x                   int
 	y                   int
 	children            []*Component
@@ -320,6 +322,23 @@ func (c *Component) HorizontalAlignment() HorizontalAlignment {
 func (c *Component) VerticalAlignment() VerticalAlignment {
 	return c.verticalAlignment
 }
+
+func (c *Component) SetWidthPercent(widthPercent float64) {
+	c.widthPercent = widthPercent
+}
+
+func (c *Component) WidthPercent() float64 {
+	return c.widthPercent
+}
+
+func (c *Component) SetHeightPercent(heightPercent float64) {
+	c.heightPercent = heightPercent
+}
+
+func (c *Component) HeightPercent() float64 {
+	return c.heightPercent
+}
+
 func (t *TUI) NewComponent(spec ComponentSpec, isFloating bool) Component {
 	return Component{
 		id:                  t.NextId(),

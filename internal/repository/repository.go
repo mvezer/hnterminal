@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	api "hnterminal/internal/apiclient"
 	config "hnterminal/internal/config"
-	"hnterminal/internal/utils"
 	"log"
 	"strconv"
 	"sync"
@@ -94,7 +93,7 @@ func (r *Repository) GetItems(ids []int) ([]*Item, error) {
 	items := make([]*Item, len(ids))
 	processedCount := 0
 	for processedCount < len(ids) {
-		for i := processedCount; i < utils.Min(processedCount+MAX_ITEM_GET_BATCH_SIZE, len(ids)); i++ {
+		for i := processedCount; i < min(processedCount+MAX_ITEM_GET_BATCH_SIZE, len(ids)); i++ {
 			r.wg.Go(func() {
 				item, err := r.GetItem(ids[i])
 				if err != nil {
