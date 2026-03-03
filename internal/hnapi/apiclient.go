@@ -1,4 +1,4 @@
-package apiclient
+package hnapi
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ type ApiClient struct {
 	client *http.Client
 }
 
-func New(httpClient *http.Client) *ApiClient {
+func NewApiClient(httpClient *http.Client) *ApiClient {
 	if httpClient == nil {
 		httpClient = CreateHttpClient(DEFAULT_TIMEOUT)
 	}

@@ -1,8 +1,7 @@
-package repository
+package hnapi
 
 import (
 	"encoding/json"
-	api "hnterminal/internal/apiclient"
 	config "hnterminal/internal/config"
 	"log"
 	"strconv"
@@ -36,13 +35,13 @@ type User struct {
 }
 type Repository struct {
 	db         *badger.DB
-	apiClient  *api.ApiClient
+	apiClient  *ApiClient
 	updatedIds map[int]bool
 	wg         *sync.WaitGroup
 	config     *config.Config
 }
 
-func New(apiClient *api.ApiClient, cfg *config.Config) *Repository {
+func NewRepository(apiClient *ApiClient, cfg *config.Config) *Repository {
 	opts := badger.DefaultOptions(cfg.DbPath)
 	// TODO: set up proper logging for badger
 	opts.Logger = nil
@@ -52,7 +51,7 @@ func New(apiClient *api.ApiClient, cfg *config.Config) *Repository {
 	}
 	client := apiClient
 	if client == nil {
-		client = api.New(nil)
+		client = NewApiClient(nil)
 	}
 	return &Repository{db, client, make(map[int]bool, 0), &sync.WaitGroup{}, cfg}
 }

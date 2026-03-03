@@ -1,35 +1,34 @@
-package cli
+package ui
 
 import (
 	"fmt"
-	apiclient "hnterminal/internal/apiclient"
-	config "hnterminal/internal/config"
-	repository "hnterminal/internal/repository"
-	utils "hnterminal/internal/utils"
+	"hnterminal/internal/config"
+	"hnterminal/internal/hnapi"
+	"hnterminal/internal/utils"
 	"strings"
 	"time"
 )
 
 type Cli struct {
 	config *config.Config
-	api    *apiclient.ApiClient
-	repo   *repository.Repository
+	api    *hnapi.ApiClient
+	repo   *hnapi.Repository
 }
 
-func New(config *config.Config) *Cli {
+func NewCli(config *config.Config) *Cli {
 	return &Cli{config, nil, nil}
 }
 
 func (c *Cli) Init() {
-	c.api = apiclient.New(nil)
-	c.repo = repository.New(c.api, c.config)
+	c.api = hnapi.NewApiClient(nil)
+	c.repo = hnapi.NewRepository(c.api, c.config)
 }
 
 func (c *Cli) Close() {
 	c.repo.Close()
 }
 
-func (c *Cli) RenderStory(index int, story *repository.Item) string {
+func (c *Cli) RenderStory(index int, story *hnapi.Item) string {
 	var rendered strings.Builder
 	fmt.Fprintf(&rendered, "%d. %s\n", index, story.Title)
 	fmt.Fprintf(&rendered, "  url: %s \n", story.Url)

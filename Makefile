@@ -39,6 +39,6 @@ run:
 
 test:
 	# go test -v -race -coverprofile=coverage.txt -covermode=atomic $(UNIT_TEST_PACKAGES)
-	go test -v "hnterminal/challenges/day$(TEST_ARGS)"
+	go test -v "hnterminal/internal/tui$(TEST_ARGS)"
 
 .PHONY: build run

@@ -2,364 +2,342 @@ package tui
 
 import (
 	"fmt"
+	"hnterminal/internal/utils"
+	"iter"
+
 	"github.com/gdamore/tcell/v3"
-	"slices"
+	"github.com/gdamore/tcell/v3/color"
 )
 
-const ZINDEX_FLOAT = 10000
+var DEFAULT_STYLE = tcell.StyleDefault.Background(color.Reset).Foreground(color.White)
 
-// ----------------- Component -----------------
-type ComponentSpec interface {
-	Draw(*Component) error
+type Component interface {
+	Draw(*BaseComponent, *TUI) error
+	OnUpdate(*BaseComponent) error
+	String() string
 }
 
-type Component struct {
-	id                  int
-	tui                 *TUI
-	width               int
-	height              int
-	minWidth            int
-	minHeight           int
-	maxWidth            int
-	maxHeight           int
-	widthPercent        float64
-	heightPercent       float64
-	x                   int
-	y                   int
-	children            []*Component
-	parent              *Component
-	style               tcell.Style
-	layout              Layout
-	floating            bool
-	zIndex              int
-	spec                ComponentSpec
-	padding             int
-	horizontalAlignment HorizontalAlignment
-	verticalAlignment   VerticalAlignment
+type Padding struct {
+	Left   int
+	Top    int
+	Right  int
+	Bottom int
 }
 
-func (c *Component) AddChild(newChild *Component) error {
-	c.tui.mutex.Lock()
-	newChild.SetZIndex(c.zIndex + ZINDEX_FLOAT + 1)
-	newChild.SetParent(c)
-	c.children = append(c.children, newChild)
-	c.tui.mutex.Unlock()
-	return nil
+var lastComponentId int = -1
+
+func getNextComponentId() int {
+	lastComponentId++
+	return lastComponentId
 }
 
-func (c *Component) RemoveChild(id int) error {
-	for i, child := range c.children {
-		if child.Id() == id {
-			c.children = append(c.children[:i], c.children[i+1:]...)
-			return nil
-		}
-	}
-	return fmt.Errorf("element (%d) not found", id)
+type BaseComponent struct {
+	id            int
+	x             int
+	y             int
+	width         int
+	height        int
+	widthPercent  int
+	heightPercent int
+	style         tcell.Style
+	children      []*BaseComponent
+	parent        *BaseComponent
+	layout        Layout
+	kind          Component
+	floating      bool
+	fixedWidth    int
+	fixedHeight   int
+	padding       Padding
+	dirty         bool
 }
 
-func (c *Component) RemoveChildren() error {
-	c.children = make([]*Component, 0)
-	return nil
-}
-
-func (c *Component) Children() []*Component {
-	return c.children
-}
-
-func (c *Component) SetParent(newParent *Component) {
-	c.parent = newParent
-}
-
-func (c *Component) Parent() *Component {
-	return c.parent
-}
-
-func (c *Component) IsRoot() bool {
-	return c.Parent() == nil
-}
-
-func (c *Component) GetSiblings() []*Component {
-	if c.IsRoot() {
-		return make([]*Component, 0)
-	}
-	siblings := c.Parent().Children()
-	siblingsCopy := make([]*Component, len(siblings))
-	copy(siblingsCopy, siblings)
-	slices.SortFunc(siblingsCopy, func(a, b *Component) int {
-		return a.Id() - b.Id()
-	})
-	return siblingsCopy
-}
-
-func (c *Component) Style() tcell.Style {
-	return c.style
-}
-
-func (c *Component) SetStyle(style tcell.Style) {
-	c.tui.mutex.Lock()
-	c.style = style
-	c.tui.mutex.Unlock()
-}
-
-func (c *Component) Width() int {
-	return c.width
-}
-
-func (c *Component) MinWidth() int {
-	return c.minWidth
-}
-
-func (c *Component) MaxWidth() int {
-	return c.maxWidth
-}
-
-func (c *Component) MinHeight() int {
-	return c.minHeight
-}
-
-func (c *Component) MaxHeight() int {
-	return c.maxHeight
-}
-
-func (c *Component) SetMinWidth(minWidth int) {
-	c.minWidth = minWidth
-}
-
-func (c *Component) SetMaxWidth(maxWidth int) {
-	c.maxWidth = maxWidth
-}
-
-func (c *Component) SetMinHeight(minHeight int) {
-	c.minHeight = minHeight
-}
-
-func (c *Component) SetMaxHeight(maxHeight int) {
-	c.maxHeight = maxHeight
-}
-
-func (c *Component) SetWidth(width int) bool {
-	if c.width == width {
-		return false
-	}
-	c.tui.mutex.Lock()
-	c.width = width
-	c.tui.mutex.Unlock()
-	return true
-}
-
-func (c *Component) Height() int {
-	return c.height
-}
-
-func (c *Component) SetHeight(height int) bool {
-	if c.height == height {
-		return false
-	}
-	c.height = height
-	return true
-}
-
-func (c *Component) X() int {
-	return c.x
-}
-func (c *Component) AbsX() int {
-	if c.IsRoot() {
-		return c.x
-	}
-	return c.x + c.Parent().AbsX()
-}
-
-func (c *Component) SetX(x int) bool {
-	if c.x == x {
-		return false
-	}
-	c.x = x
-	return true
-}
-
-func (c *Component) Y() int {
-	return c.y
-}
-
-func (c *Component) AbsY() int {
-	if c.IsRoot() {
-		return c.y
-	}
-	return c.y + c.Parent().AbsY()
-}
-
-func (c *Component) SetY(y int) bool {
-	if c.y == y {
-		return false
-	}
-	c.y = y
-	return true
-}
-
-func (c *Component) Screen() tcell.Screen {
-	return c.tui.screen
-}
-
-func (c *Component) Id() int {
+func (c *BaseComponent) Id() int {
 	return c.id
 }
 
-func (c *Component) Root() *Component {
-	return c.tui.root
+func (c *BaseComponent) ResetGeometry() {
+	c.width = -1
+	c.height = -1
+	c.dirty = true
 }
 
-func (c *Component) Spec() ComponentSpec {
-	return c.spec
+func (c *BaseComponent) SetPadding(p Padding) {
+	c.padding = p
 }
 
-func (c *Component) Draw() error {
-	return c.spec.Draw(c)
+func (c *BaseComponent) Padding() Padding {
+	return c.padding
 }
 
-func (c *Component) Layout() Layout {
-	return c.layout
+func (c *BaseComponent) SetLayout(l Layout) {
+	c.layout = l
 }
 
-func (c *Component) SetLayout(layout Layout) {
-	c.layout = layout
-}
-
-func (c *Component) Floating() bool {
-	return c.floating
-}
-
-func (c *Component) SetZIndex(zIndex int) {
-	c.zIndex = zIndex
-}
-
-func (c *Component) ZIndex() int {
-	return c.zIndex
-}
-
-func (c *Component) HasChildren() bool {
-	return len(c.children) > 0
-}
-
-func (c *Component) SetGeometry(x int, y int, width int, height int) bool {
-	geometryChanged := c.SetX(x)
-	geometryChanged = c.SetY(y) || geometryChanged
-	geometryChanged = c.SetWidth(width) || geometryChanged
-	geometryChanged = c.SetHeight(height) || geometryChanged
-	if geometryChanged || true {
-		c.tui.AddToDrawMap(c)
+func (c *BaseComponent) AbsoluteX() int {
+	if c.parent == nil {
+		return c.x
 	}
-	return geometryChanged
+	return c.x + c.parent.AbsoluteX()
 }
 
-func (c *Component) Traverse() []*Component {
-	result := make([]*Component, 0)
-	result = append(result, c)
-	i := 0
-	for i < len(result) {
-		e := result[i]
-		i++
-		for _, c := range (*e).Children() {
-			result = append(result, c)
+func (c *BaseComponent) AbsoluteY() int {
+	if c.parent == nil {
+		return c.y
+	}
+	return c.y + c.parent.AbsoluteY()
+}
+
+func (c *BaseComponent) Parent() *BaseComponent {
+	return c.parent
+}
+
+func (c *BaseComponent) SetParent(parent *BaseComponent) {
+	c.parent = parent
+}
+
+func (c *BaseComponent) Children() []*BaseComponent {
+	return c.children
+}
+
+func (c *BaseComponent) AddChild(child *BaseComponent) {
+	// TODO: check if child already has a parent
+	// TODO: check if the child is already added to this component
+	c.children = append(c.children, child)
+	child.SetParent(c)
+}
+
+func (c *BaseComponent) HasChildren() bool {
+	return len(c.Children()) > 0
+}
+
+func (c *BaseComponent) RemoveChildById(id int) {
+	for i, child := range c.children {
+		if child.Id() == id {
+			c.children = append(c.children[:i], c.children[i+1:]...)
+			break
 		}
 	}
-	return result
 }
 
-func (c *Component) Size() (int, int) {
+func (c *BaseComponent) Style() tcell.Style {
+	return c.style
+}
+
+func (c *BaseComponent) SetStyle(style tcell.Style) {
+	c.style = style
+}
+
+func (c *BaseComponent) Width() int {
+	return c.width
+}
+
+func (c *BaseComponent) SetWidth(width int) {
+	if c.width != width {
+		c.width = width
+		c.dirty = true
+		c.kind.OnUpdate(c)
+	}
+}
+
+func (c *BaseComponent) Height() int {
+	return c.height
+}
+
+func (c *BaseComponent) SetHeight(height int) {
+	if c.height != height {
+		c.height = height
+		c.dirty = true
+		c.kind.OnUpdate(c)
+	}
+}
+
+func (c *BaseComponent) X() int {
+	return c.x
+}
+
+func (c *BaseComponent) SetX(x int) {
+	if c.x != x {
+		c.x = x
+		c.dirty = true
+		c.kind.OnUpdate(c)
+	}
+}
+
+func (c *BaseComponent) Y() int {
+	return c.y
+}
+
+func (c *BaseComponent) SetY(y int) {
+	if c.y != y {
+		c.y = y
+		c.dirty = true
+		c.kind.OnUpdate(c)
+	}
+}
+
+func (c *BaseComponent) SetGeometry(x, y, width, height int) bool {
+	c.SetX(x)
+	c.SetY(y)
+	c.SetWidth(width)
+	c.SetHeight(height)
+	return c.dirty
+}
+
+func (c *BaseComponent) Size() (int, int) {
 	return c.width, c.height
 }
 
-func (c *Component) SetSize(width int, height int) {
+func (c *BaseComponent) SetSize(width int, height int) {
 	c.width = width
 	c.height = height
 }
 
-func (c *Component) Padding() int {
-	return c.padding
+func (c *BaseComponent) Floating() bool {
+	return c.floating
 }
 
-func (c *Component) SetPadding(padding int) {
-	c.padding = padding
-}
-
-func (c *Component) FullyCovered() bool {
-	isFullyCovered := false
-	// surely not covered if it has no children (so it's a leaf) or padding
-	if !c.HasChildren() || c.Padding() != 0 {
-		isFullyCovered = false
-	} else if c.Layout() == LayoutFill || c.Layout() == LayoutHorizontalGrid || c.Layout() == LayoutVerticalGrid {
-		// if it has any kind of fill layout and has at least one box child, it's fully covered
-		for _, c := range c.Children() {
-			if _, isBox := c.Spec().(*Box); isBox {
-				isFullyCovered = true
-				break
-			}
-		}
-	}
-	return isFullyCovered
-}
-
-func (c *Component) SetHorizontalAlignment(alignment HorizontalAlignment) {
-	if c.horizontalAlignment == alignment {
-		return
-	}
-	c.horizontalAlignment = alignment
-	c.tui.UpdateGeometry(c)
-}
-
-func (c *Component) SetVerticalAlignment(alignment VerticalAlignment) {
-	if c.verticalAlignment == alignment {
-		return
-	}
-	c.verticalAlignment = alignment
-	c.tui.UpdateGeometry(c)
-}
-
-func (c *Component) HorizontalAlignment() HorizontalAlignment {
-	return c.horizontalAlignment
-}
-
-func (c *Component) VerticalAlignment() VerticalAlignment {
-	return c.verticalAlignment
-}
-
-func (c *Component) SetWidthPercent(widthPercent float64) {
-	c.widthPercent = widthPercent
-}
-
-func (c *Component) WidthPercent() float64 {
-	return c.widthPercent
-}
-
-func (c *Component) SetHeightPercent(heightPercent float64) {
-	c.heightPercent = heightPercent
-}
-
-func (c *Component) HeightPercent() float64 {
+func (c *BaseComponent) HeightPercent() int {
 	return c.heightPercent
 }
 
-func (t *TUI) NewComponent(spec ComponentSpec, isFloating bool) Component {
-	return Component{
-		id:                  t.NextId(),
-		tui:                 t,
-		width:               0,
-		height:              0,
-		minWidth:            -1,
-		maxWidth:            -1,
-		minHeight:           -1,
-		maxHeight:           -1,
-		x:                   0,
-		y:                   0,
-		children:            make([]*Component, 0),
-		parent:              nil,
-		style:               t.defaultStyle,
-		layout:              LayoutFill,
-		floating:            isFloating,
-		zIndex:              -1,
-		spec:                spec,
-		padding:             0,
-		horizontalAlignment: HorizontalAlignmentCenter,
-		verticalAlignment:   VerticalAlignmentCenter,
+func (c *BaseComponent) WidthPercent() int {
+	return c.widthPercent
+}
+
+func (c *BaseComponent) SetWidthPercent(widthPercent int) {
+	if c.widthPercent != widthPercent {
+		c.widthPercent = widthPercent
+		c.dirty = true
+	}
+}
+
+func (c *BaseComponent) SetHeightPercent(heightPercent int) {
+	c.heightPercent = heightPercent
+}
+
+func (c *BaseComponent) FixedWidth() int {
+	return c.fixedWidth
+}
+
+func (c *BaseComponent) FixedHeight() int {
+	return c.fixedHeight
+}
+
+func (c *BaseComponent) SetFixedWidth(width int) {
+	c.fixedWidth = width
+}
+
+func (c *BaseComponent) SetFixedHeight(height int) {
+	c.fixedHeight = height
+}
+
+func (c *BaseComponent) Dirty() bool {
+	return c.dirty
+}
+
+func (c *BaseComponent) SetDirty(dirty bool) {
+	c.dirty = dirty
+}
+
+func (c *BaseComponent) Draw(t *TUI) {
+	c.kind.Draw(c, t)
+	c.dirty = false
+}
+
+func (c *BaseComponent) String() string {
+	layoutString := ""
+	switch c.layout {
+	case HorizontalGrid:
+		layoutString = "HorizontalGrid"
+	case VerticalGrid:
+		layoutString = "VerticalGrid"
+	case FixedWidth:
+		layoutString = "FixedWidth"
+	case FixedHeight:
+		layoutString = "FixedHeight"
+	}
+	return fmt.Sprintf("Component #%d [%s]\nx: %d, y: %d\nlayout: %s\n,width: %d, height: %d\nfixedWidth: %d, fixedHeight: %d\nfloating: %t\n", c.id, c.kind.String(), c.x, c.y, layoutString, c.width, c.height, c.fixedWidth, c.fixedHeight, c.floating)
+}
+
+func NewComponent(kind Component, layout Layout) BaseComponent {
+	return BaseComponent{
+		id:          getNextComponentId(),
+		style:       DEFAULT_STYLE,
+		kind:        kind,
+		floating:    false,
+		layout:      layout,
+		fixedWidth:  -1,
+		fixedHeight: -1,
+		width:       -1,
+		height:      -1,
+		padding:     Padding{0, 0, 0, 0},
+	}
+}
+
+func (c *BaseComponent) IsRoot() bool {
+	return c.parent == nil
+}
+
+func (c *BaseComponent) Find(findFunc func(*BaseComponent) bool) *BaseComponent {
+	for c := range c.Traverse() {
+		if findFunc(c) {
+			return c
+		}
+	}
+	return nil
+}
+
+func (c *BaseComponent) Traverse() iter.Seq[*BaseComponent] {
+	return func(yield func(*BaseComponent) bool) {
+		fifo := utils.FIFO[BaseComponent]{}
+		fifo.Enqueue(c)
+
+		for !fifo.IsEmpty() {
+			e := fifo.Dequeue()
+			if !yield(e) {
+				return
+			}
+			for _, c := range e.Children() {
+				fifo.Enqueue(c)
+			}
+		}
+	}
+}
+
+func (c *BaseComponent) TraverseNonFloating() iter.Seq[*BaseComponent] {
+	return func(yield func(*BaseComponent) bool) {
+		fifo := utils.FIFO[BaseComponent]{}
+		fifo.Enqueue(c)
+
+		for !fifo.IsEmpty() {
+			e := fifo.Dequeue()
+			if !yield(e) {
+				return
+			}
+			for _, c := range e.Children() {
+				if !c.Floating() {
+					fifo.Enqueue(c)
+				}
+			}
+		}
+	}
+}
+
+func (c *BaseComponent) TraverseFloating() iter.Seq[*BaseComponent] {
+	return func(yield func(*BaseComponent) bool) {
+		fifo := utils.FIFO[BaseComponent]{}
+		fifo.Enqueue(c)
+
+		for !fifo.IsEmpty() {
+			e := fifo.Dequeue()
+			if e.floating {
+				if !yield(e) {
+					return
+				}
+			}
+			for _, c := range e.Children() {
+				fifo.Enqueue(c)
+			}
+		}
 	}
 }
