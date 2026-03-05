@@ -86,6 +86,13 @@ func NewBox(layout Layout) BaseComponent {
 	return NewComponent(&b, layout)
 }
 
+func NewFloatingBox(layout Layout) BaseComponent {
+	b := Box{}
+	c := NewComponent(&b, layout)
+	c.floating = true
+	return c
+}
+
 func (b *Box) OnUpdate(c *BaseComponent) error {
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hnterminal/internal/utils"
 	"iter"
+	"slices"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
@@ -97,6 +98,18 @@ func (c *BaseComponent) SetParent(parent *BaseComponent) {
 
 func (c *BaseComponent) Children() []*BaseComponent {
 	return c.children
+}
+
+func (c *BaseComponent) FilteredChildren(filter func(*BaseComponent) bool) []*BaseComponent {
+	return slices.Collect(func(yield func(*BaseComponent) bool) {
+		for _, child := range c.children {
+			if filter(child) {
+				if !yield(child) {
+					return
+				}
+			}
+		}
+	})
 }
 
 func (c *BaseComponent) AddChild(child *BaseComponent) {
@@ -256,7 +269,7 @@ func (c *BaseComponent) String() string {
 	case FixedHeight:
 		layoutString = "FixedHeight"
 	}
-	return fmt.Sprintf("Component #%d [%s]\nx: %d, y: %d\nlayout: %s\n,width: %d, height: %d\nfixedWidth: %d, fixedHeight: %d\nfloating: %t\n", c.id, c.kind.String(), c.x, c.y, layoutString, c.width, c.height, c.fixedWidth, c.fixedHeight, c.floating)
+	return fmt.Sprintf("Component #%d [%s]\nx: %d, y: %d\nlayout: %s,\nwidth: %d, height: %d\nfixedWidth: %d, fixedHeight: %d\nfloating: %t\npadding: %+v\n", c.id, c.kind.String(), c.x, c.y, layoutString, c.width, c.height, c.fixedWidth, c.fixedHeight, c.floating, c.padding)
 }
 
 func NewComponent(kind Component, layout Layout) BaseComponent {
@@ -304,7 +317,9 @@ func (c *BaseComponent) Traverse() iter.Seq[*BaseComponent] {
 	}
 }
 
-func (c *BaseComponent) TraverseNonFloating() iter.Seq[*BaseComponent] {
+// Traverses all the componetest in the subtree of the component
+// filters out all floating components (except the root)
+func (c *BaseComponent) TraverseSubtree() iter.Seq[*BaseComponent] {
 	return func(yield func(*BaseComponent) bool) {
 		fifo := utils.FIFO[BaseComponent]{}
 		fifo.Enqueue(c)

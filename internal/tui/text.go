@@ -76,7 +76,9 @@ func (t *Text) RenderLine(line []string, width int) string {
 		renderedLine = strings.Join(line, " ")
 	case TextAlignCenter:
 		renderedLine = strings.Join(line, " ")
-		renderedLine = strings.Repeat(" ", (width-len(renderedLine))/2) + renderedLine
+		paddingLeft := strings.Repeat(" ", (width-len(renderedLine))/2)
+		paddingRight := strings.Repeat(" ", width-len(renderedLine)-len(paddingLeft))
+		renderedLine = paddingLeft + renderedLine + paddingRight
 	case TextAlignRight:
 		renderedLine = strings.Join(line, " ")
 		renderedLine = strings.Repeat(" ", width-len(renderedLine)) + renderedLine

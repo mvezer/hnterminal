@@ -4,7 +4,7 @@ import (
 	"hnterminal/internal/utils"
 )
 
-type LayoutFunc func(*BaseComponent) bool
+type layoutFunc func(*BaseComponent)
 
 type Layout int
 
@@ -15,11 +15,11 @@ const (
 	FixedHeight
 )
 
-var LayoutFuncs = map[Layout]LayoutFunc{
-	HorizontalGrid: HorizontalGridLayout,
-	VerticalGrid:   VerticalGridLayout,
-	FixedWidth:     FixedWidthLayout,
-	FixedHeight:    FixedHeightLayout,
+var layoutFuncs = map[Layout]layoutFunc{
+	HorizontalGrid: horizontalGridLayoutFunc,
+	VerticalGrid:   verticalGridLayoutFunc,
+	FixedWidth:     fixedWidthLayoutFunc,
+	FixedHeight:    fixedHeightLayoutFunc,
 }
 
 // Filters and updates floating components
@@ -48,6 +48,25 @@ func filterAndUpdateFloating(components []*BaseComponent) []*BaseComponent {
 		c.SetGeometry(x, y, w, h)
 	}
 	return nonfloating
+}
+
+func updateFloating(c *BaseComponent) bool {
+	w := c.fixedWidth
+	h := c.fixedHeight
+	x := 0
+	y := 0
+	if c.widthPercent > 0 {
+		w = int(float64(c.parent.width) / 100.0 * float64(c.widthPercent))
+	}
+	if c.HeightPercent() > 0 {
+		w = int(float64(c.parent.height) / 100.0 * float64(c.heightPercent))
+	}
+	if !c.IsRoot() {
+		x = (c.parent.width - w) / 2
+		y = (c.parent.height - h) / 2
+	}
+	c.SetGeometry(x, y, w, h)
+	return w == -1 || h == -1
 }
 
 // retuns the calculated grid sizes
@@ -94,12 +113,14 @@ func calculateGrid(percentages []int, targetSize int) []int {
 	return sizes
 }
 
-// type HorizontalGridLayout struct{}
+// type horizontalGridLayoutFunc struct{}
 // the height is given by the parent or the biggest height of the children
-func HorizontalGridLayout(component *BaseComponent) bool {
-	components := filterAndUpdateFloating(component.Children())
-	percentages := make([]int, len(components))
-	for i, c := range components {
+func horizontalGridLayoutFunc(component *BaseComponent) {
+	children := component.FilteredChildren(func(c *BaseComponent) bool { // filter out floating components
+		return !c.floating
+	})
+	percentages := make([]int, len(children))
+	for i, c := range children {
 		percentages[i] = c.widthPercent
 	}
 	if component.height == -1 { // we try to figure out the height
@@ -107,7 +128,7 @@ func HorizontalGridLayout(component *BaseComponent) bool {
 			component.height = component.fixedHeight + component.Padding().Top + component.Padding().Bottom
 		} else { // ...otherwise we use the biggest child height
 			biggestHeight := 0
-			for _, c := range components {
+			for _, c := range children {
 				if c.height == -1 { // if any of the children has no height set, we bail and use -1 for the component height
 					biggestHeight = -1
 					break
@@ -124,56 +145,60 @@ func HorizontalGridLayout(component *BaseComponent) bool {
 		}
 	}
 	xOffset := 0
-	height := component.Height()
-	for i, w := range calculateGrid(percentages, component.Width()-component.Padding().Left-component.Padding().Right) {
-		components[i].x = xOffset + component.Padding().Left
-		components[i].y = 0
-		components[i].width = w
-		components[i].height = height
+	height := component.height
+	for i, w := range calculateGrid(percentages, component.width-component.padding.Left-component.padding.Right) {
+		children[i].x = xOffset + component.padding.Left
+		children[i].y = 0
+		children[i].width = w
+		children[i].height = height
 		xOffset += w
 	}
-	// returns true if dirty
-	return component.height == -1 || component.width == -1
 }
 
-func VerticalGridLayout(component *BaseComponent) bool {
-	return false
+func verticalGridLayoutFunc(component *BaseComponent) {
 }
 
 // returns true if the component needs follow up
-func FixedWidthLayout(component *BaseComponent) bool {
-	components := filterAndUpdateFloating(component.Children())
-	for _, c := range components {
-		c.width = component.width - component.Padding().Left - component.Padding().Right
+func fixedWidthLayoutFunc(component *BaseComponent) {
+	children := component.FilteredChildren(func(c *BaseComponent) bool { // filter out floating components
+		return !c.floating
+	})
+	for _, c := range children {
+		c.width = component.width - component.padding.Left - component.padding.Right
 		c.kind.OnUpdate(c)
 	}
 	if component.height == -1 { // if not set, we try to use the fixedHeight
 		if component.fixedHeight != -1 {
-			component.height = component.fixedHeight + component.Padding().Top + component.Padding().Bottom
+			component.height = component.fixedHeight + component.padding.Top + component.padding.Bottom
 		} else {
 			// add up the heights of the children
 			yOffset := 0
-			for _, c := range components {
+			for _, c := range children {
 				if c.height == -1 {
 					yOffset = -1
 					break
 				}
-				c.x = component.Padding().Left
-				c.y = yOffset + component.Padding().Top
+				c.x = component.padding.Left
+				c.y = yOffset + component.padding.Top
 				yOffset += c.height
 				c.kind.OnUpdate(c)
 			}
 			if yOffset == -1 {
 				component.height = -1
 			} else {
-				component.height = yOffset + component.Padding().Top + component.Padding().Bottom
+				component.height = yOffset + component.padding.Top + component.padding.Bottom
 			}
 		}
 	}
-
-	return component.height == -1 || component.width == -1
 }
 
-func FixedHeightLayout(c *BaseComponent) bool {
-	return false
+func fixedHeightLayoutFunc(c *BaseComponent) {
+}
+
+func ApplyLayout(component *BaseComponent) bool {
+	if component.floating {
+		updateFloating(component)
+	}
+	layoutFuncs[component.layout](component)
+	return component.height == -1 || component.width == -1
 }
