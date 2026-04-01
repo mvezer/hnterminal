@@ -1,21 +1,18 @@
 package main
 
 import (
+	"hnterminal/internal/api"
 	config "hnterminal/internal/config"
-	"hnterminal/internal/tui"
+	"hnterminal/internal/ui"
+	"hnterminal/tui"
 )
 
 func main() {
+	apiClient := api.NewApiClient(nil)
 	currentConfig := config.New()
+	repository := api.NewRepository(apiClient, currentConfig)
 	tui := tui.New(currentConfig)
-	tui.Init()
-	tui.Run()
-	// if config.IsTUI() {
-	// 	tui := ui.NewTui(currentConfig)
-	// 	tui.Run()
-	// } else {
-	// 	cli := ui.NewCli(currentConfig)
-	// 	cli.Run()
-	// 	defer cli.Close()
-	// }
+	ui := ui.New(tui, repository, apiClient)
+	ui.Init()
+	ui.Run()
 }

@@ -33,17 +33,18 @@ func Abs[T int | float64](x T) T {
 	return x
 }
 
+// -- FIFO
 type FIFO[T any] struct {
-	data []*T
+	data []T
 }
 
-func (f *FIFO[T]) Enqueue(x *T) {
+func (f *FIFO[T]) Enqueue(x T) {
 	f.data = append(f.data, x)
 }
 
-func (f *FIFO[T]) Dequeue() *T {
-	if len(f.data) == 0 {
-		return nil
+func (f *FIFO[T]) Dequeue() T {
+	if f.IsEmpty() {
+		log.Panic("Dequeue on empty queue")
 	}
 	x := f.data[0]
 	f.data = f.data[1:]
@@ -52,6 +53,28 @@ func (f *FIFO[T]) Dequeue() *T {
 
 func (f *FIFO[T]) IsEmpty() bool {
 	return len(f.data) == 0
+}
+
+// -- Stack
+type Stack[T any] struct {
+	data []T
+}
+
+func (s *Stack[T]) Push(x T) {
+	s.data = append(s.data, x)
+}
+
+func (s *Stack[T]) Pop() T {
+	if s.IsEmpty() {
+		log.Panic("Pop on empty stack")
+	}
+	x := s.data[len(s.data)-1]
+	s.data = s.data[:len(s.data)-1]
+	return x
+}
+
+func (s *Stack[T]) IsEmpty() bool {
+	return len(s.data) == 0
 }
 
 func InitLogFile() {

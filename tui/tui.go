@@ -2,7 +2,8 @@ package tui
 
 import (
 	"hnterminal/internal/config"
-	"hnterminal/internal/utils"
+	"hnterminal/utils"
+	"log"
 
 	"sync"
 
@@ -55,6 +56,30 @@ func New(config *config.Config) *TUI {
 	utils.InitLogFile()
 
 	return tui
+}
+
+func (t *TUI) NewComponent() BaseComponent {
+	c := BaseComponent{
+		id:            t.maxId,
+		tui:           t,
+		x:             0,
+		y:             0,
+		width:         0,
+		height:        0,
+		widthPercent:  -1,
+		heightPercent: -1,
+		style:         t.defaultStyle,
+		children:      make([]Component, 0),
+		parent:        nil,
+		layout:        FixedWidth,
+		floating:      false,
+		fixedWidth:    -1,
+		fixedHeight:   -1,
+		padding:       Padding{Top: 0, Bottom: 0, Left: 0, Right: 0},
+		dirty:         true,
+	}
+	t.maxId++
+	return c
 }
 
 var storiesList BaseComponent
@@ -192,6 +217,7 @@ func (t *TUI) Draw() {
 				c.dirty = false
 			}
 		}
+		log.Println(root.DebugTree())
 	}
 	t.screen.Sync()
 }
@@ -202,4 +228,12 @@ func (t *TUI) Quit() {
 	if maybePanic != nil {
 		panic(maybePanic)
 	}
+}
+
+func (t *TUI) Root() *BaseComponent {
+	return t.root
+}
+
+func (t *TUI) Screen() tcell.Screen {
+	return t.screen
 }

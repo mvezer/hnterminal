@@ -6,6 +6,7 @@ import (
 )
 
 type Text struct {
+	BaseComponent
 	text        string
 	alignment   TextAlignment
 	wrappedText [][]string // text separated to lines and words
@@ -111,22 +112,22 @@ func (t *Text) RenderLine(line []string, width int) string {
 	return renderedLine
 }
 
-func (t Text) Draw(c *BaseComponent, tui *TUI) error {
+func (t Text) Draw() error {
 	if t.wrappedText == nil {
 		return nil
 	}
-	for y := 0; y < min(c.height, len(t.wrappedText)); y++ {
-		for x, chr := range t.RenderLine(t.wrappedText[y], c.width) {
-			tui.screen.SetContent(c.AbsoluteX()+x, c.AbsoluteY()+y, chr, nil, c.style)
+	for y := 0; y < min(t.height, len(t.wrappedText)); y++ {
+		for x, chr := range t.RenderLine(t.wrappedText[y], t.width) {
+			t.tui.screen.SetContent(t.AbsoluteX()+x, t.AbsoluteY()+y, chr, nil, t.style)
 		}
 	}
 	return nil
 }
 
-func (t *Text) OnUpdate(c *BaseComponent) error {
-	if c.width > c.padding.Left+c.padding.Right { // cannot update if the width is 0 or negative TODO: protect the "calculateWordWrap" function better
-		t.wrappedText = t.calculateWordWrap(c.width - c.padding.Left - c.padding.Right)
-		c.fixedHeight = len(t.wrappedText) + c.padding.Top + c.padding.Bottom
+func (t *Text) AfterUpdate() error {
+	if t.width > t.padding.Left+t.padding.Right { // cannot update if the width is 0 or negative TODO: protect the "calculateWordWrap" function better
+		t.wrappedText = t.calculateWordWrap(t.width - t.padding.Left - t.padding.Right)
+		t.fixedHeight = len(t.wrappedText) + t.padding.Top + t.padding.Bottom
 	}
 	return nil
 }
@@ -151,7 +152,7 @@ func (t *Text) String() string {
 	return fmt.Sprintf("Text (alignment: %s)", align)
 }
 
-func NewText(text string, layout Layout) BaseComponent {
-	t := Text{text: text, alignment: TextAlignLeft}
-	return NewComponent(&t, layout)
+func (t *TUI) NewText(text string) Text {
+	newText := Text{t.NewComponent(), text, TextAlignLeft, make([][]string, 0)}
+	return newText
 }

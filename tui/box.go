@@ -68,11 +68,17 @@ var borders = map[BorderStyle]BorderElements{
 }
 
 type Box struct {
+	BaseComponent
 	borderStyle BorderStyle
 	border      Border
 }
 
 type TextAlignment int
+
+func (t *TUI) NewBox() Box {
+	b := Box{t.NewComponent(), BorderStyleNone, Border{Top: false, Bottom: false, Left: false, Right: false}}
+	return b
+}
 
 const (
 	TextAlignLeft TextAlignment = iota
@@ -81,34 +87,18 @@ const (
 	TextAlignJustify
 )
 
-func NewBox(layout Layout) BaseComponent {
-	b := Box{}
-	return NewComponent(&b, layout)
-}
-
-func NewFloatingBox(layout Layout) BaseComponent {
-	b := Box{}
-	c := NewComponent(&b, layout)
-	c.floating = true
-	return c
-}
-
-func (b *Box) OnUpdate(c *BaseComponent) error {
-	return nil
-}
-
-func (b Box) Draw(c *BaseComponent, tui *TUI) error {
-	if c.width <= 0 || c.height <= 0 {
+func (b Box) Draw() error {
+	if b.width <= 0 || b.height <= 0 {
 		return nil
 	}
-	for y := 0; y < c.height; y++ {
-		for x := 0; x < c.width; x++ {
+	for y := 0; y < b.height; y++ {
+		for x := 0; x < b.width; x++ {
 			chr := ' '
 			if b.borderStyle != BorderStyleNone {
 				top := y == 0
-				bottom := y == c.height-1
+				bottom := y == b.height-1
 				left := x == 0
-				right := x == c.width-1
+				right := x == b.width-1
 				if top && left {
 					if b.border.Top && b.border.Left {
 						chr = borders[b.borderStyle].topLeft
@@ -160,7 +150,7 @@ func (b Box) Draw(c *BaseComponent, tui *TUI) error {
 				}
 			}
 
-			tui.screen.SetContent(c.AbsoluteX()+x, c.AbsoluteY()+y, chr, nil, c.style)
+			b.tui.screen.SetContent(b.AbsoluteX()+x, b.AbsoluteY()+y, chr, nil, b.style)
 		}
 	}
 	return nil

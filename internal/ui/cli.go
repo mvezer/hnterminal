@@ -2,17 +2,17 @@ package ui
 
 import (
 	"fmt"
+	"hnterminal/internal/api"
 	"hnterminal/internal/config"
-	"hnterminal/internal/hnapi"
-	"hnterminal/internal/utils"
+	"hnterminal/utils"
 	"strings"
 	"time"
 )
 
 type Cli struct {
 	config *config.Config
-	api    *hnapi.ApiClient
-	repo   *hnapi.Repository
+	api    *api.ApiClient
+	repo   *api.Repository
 }
 
 func NewCli(config *config.Config) *Cli {
@@ -20,15 +20,15 @@ func NewCli(config *config.Config) *Cli {
 }
 
 func (c *Cli) Init() {
-	c.api = hnapi.NewApiClient(nil)
-	c.repo = hnapi.NewRepository(c.api, c.config)
+	c.api = api.NewApiClient(nil)
+	c.repo = api.NewRepository(c.api, c.config)
 }
 
 func (c *Cli) Close() {
 	c.repo.Close()
 }
 
-func (c *Cli) RenderStory(index int, story *hnapi.Item) string {
+func (c *Cli) RenderStory(index int, story *api.Item) string {
 	var rendered strings.Builder
 	fmt.Fprintf(&rendered, "%d. %s\n", index, story.Title)
 	fmt.Fprintf(&rendered, "  url: %s \n", story.Url)

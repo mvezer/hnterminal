@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	utils "hnterminal/internal/utils"
+	utils "hnterminal/utils"
 	"os"
 
 	arg "github.com/alexflint/go-arg"

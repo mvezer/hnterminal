@@ -1,4 +1,4 @@
-package hnapi
+package api
 
 import (
 	"encoding/json"
